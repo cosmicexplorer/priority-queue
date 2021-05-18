@@ -32,6 +32,7 @@ hashbrown = "0.9"
 
 [features]
 benchmarks = []
+nightly = ["indexmap/nightly"]
 
 [workspace]
 members = ["test-nostd"]
