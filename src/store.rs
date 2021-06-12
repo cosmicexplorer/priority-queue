@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi
+ *  Copyright 2017, 2022 Gianmarco Garrisi
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -17,12 +17,12 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-#[cfg(not(has_std))]
-use std::vec::Vec;
+use indexmap::Vec;
 
 // an improvement in terms of complexity would be to use a bare HashMap
 // as vec instead of the IndexMap
 use crate::core_iterators::*;
+use crate::{Allocator, Global};
 
 use std::borrow::Borrow;
 use std::cmp::{Eq, Ord};
@@ -37,42 +37,45 @@ use indexmap::map::{IndexMap, MutableKeys};
 /// Internal storage of PriorityQueue and DoublePriorityQueue
 #[derive(Clone)]
 #[cfg(has_std)]
-pub(crate) struct Store<I, P, H = RandomState>
+pub(crate) struct Store<I, P, Arena = Global, H = RandomState>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub map: IndexMap<I, P, H>, // Stores the items and assign them an index
-    pub heap: Vec<usize>,       // Implements the heap of indexes
-    pub qp: Vec<usize>,         // Performs the translation from the index
+    pub map: IndexMap<I, P, Arena, H>, // Stores the items and assign them an index
+    pub heap: Vec<usize, Arena>,       // Implements the heap of indexes
+    pub qp: Vec<usize, Arena>,         // Performs the translation from the index
     // of the map to the index of the heap
     pub size: usize, // The size of the heap
 }
 
 #[derive(Clone)]
 #[cfg(not(has_std))]
-pub(crate) struct Store<I, P, H>
+pub(crate) struct Store<I, P, Arena = Global, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub map: IndexMap<I, P, H>, // Stores the items and assign them an index
-    pub heap: Vec<usize>,       // Implements the heap of indexes
-    pub qp: Vec<usize>,         // Performs the translation from the index
+    pub map: IndexMap<I, P, Arena, H>, // Stores the items and assign them an index
+    pub heap: Vec<usize, Arena>,       // Implements the heap of indexes
+    pub qp: Vec<usize, Arena>,         // Performs the translation from the index
     // of the map to the index of the heap
     pub size: usize, // The size of the heap
 }
 
 // do not [derive(Eq)] to loosen up trait requirements for other types and impls
-impl<I, P, H> Eq for Store<I, P, H>
+impl<I, P, Arena, H> Eq for Store<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher,
+    Arena: Allocator + Clone,
 {
 }
 
-impl<I, P, H> Default for Store<I, P, H>
+impl<I, P, H> Default for Store<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
@@ -100,7 +103,25 @@ where
     }
 }
 
-impl<I, P, H> Store<I, P, H>
+#[cfg(has_std)]
+impl<I, P, Arena> Store<I, P, Arena>
+where
+    P: Ord,
+    I: Hash + Eq,
+    Arena: Allocator + Clone,
+{
+    /// Creates an empty `Store`
+    pub fn new_in(arena: Arena) -> Self {
+        Self::with_capacity_in(0, arena)
+    }
+
+    /// Creates an empty `Store` with the specified capacity.
+    pub fn with_capacity_in(capacity: usize, arena: Arena) -> Self {
+        Self::with_capacity_and_default_hasher_in(capacity, arena)
+    }
+}
+
+impl<I, P, H> Store<I, P, Global, H>
 where
     P: Ord,
     I: Hash + Eq,
@@ -117,7 +138,25 @@ where
     }
 }
 
-impl<I, P, H> Store<I, P, H>
+impl<I, P, Arena, H> Store<I, P, Arena, H>
+where
+    P: Ord,
+    I: Hash + Eq,
+    H: BuildHasher + Default,
+    Arena: Allocator + Clone,
+{
+    /// Creates an empty `Store` with the default hasher
+    pub fn with_default_hasher_in(arena: Arena) -> Self {
+        Self::with_capacity_and_default_hasher_in(0, arena)
+    }
+
+    /// Creates an empty `Store` with the specified capacity and default hasher
+    pub fn with_capacity_and_default_hasher_in(capacity: usize, arena: Arena) -> Self {
+        Self::with_capacity_and_hasher_in(capacity, H::default(), arena)
+    }
+}
+
+impl<I, P, H> Store<I, P, Global, H>
 where
     P: Ord,
     I: Hash + Eq,
@@ -138,6 +177,33 @@ where
             map: IndexMap::with_capacity_and_hasher(capacity, hash_builder),
             heap: Vec::with_capacity(capacity),
             qp: Vec::with_capacity(capacity),
+            size: 0,
+        }
+    }
+}
+
+impl<I, P, Arena, H> Store<I, P, Arena, H>
+where
+    P: Ord,
+    I: Hash + Eq,
+    H: BuildHasher,
+    Arena: Allocator + Clone,
+{
+    /// Creates an empty `Store` with the specified hasher
+    pub fn with_hasher_in(hash_builder: H, arena: Arena) -> Self {
+        Self::with_capacity_and_hasher_in(0, hash_builder, arena)
+    }
+
+    /// Creates an empty `Store` with the specified capacity and hasher
+    ///
+    /// The internal collections will be able to hold at least `capacity`
+    /// elements without reallocating.
+    /// If `capacity` is 0, there will be no allocation.
+    pub fn with_capacity_and_hasher_in(capacity: usize, hash_builder: H, arena: Arena) -> Self {
+        Self {
+            map: IndexMap::with_capacity_and_hasher_in(capacity, hash_builder, arena.clone()),
+            heap: Vec::with_capacity_in(capacity, arena.clone()),
+            qp: Vec::with_capacity_in(capacity, arena),
             size: 0,
         }
     }
@@ -189,10 +255,11 @@ where
 }
 */
 
-impl<I, P, H> Store<I, P, H>
+impl<I, P, Arena, H> Store<I, P, Arena, H>
 where
     P: Ord,
     I: Hash + Eq,
+    Arena: Allocator + Clone,
 {
     /// Returns the number of elements the internal map can hold without
     /// reallocating.
@@ -269,11 +336,12 @@ where
     }
 }
 
-impl<I, P, H> Store<I, P, H>
+impl<I, P, Arena, H> Store<I, P, Arena, H>
 where
     P: Ord,
     I: Hash + Eq,
     H: BuildHasher,
+    Arena: Allocator + Clone,
 {
     /// Change the priority of an Item returning the old value of priority,
     /// or `None` if the item wasn't in the queue.
@@ -433,26 +501,28 @@ where
     }
 }
 
-impl<I, P, H> IntoIterator for Store<I, P, H>
+impl<I, P, Arena, H> IntoIterator for Store<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher,
+    Arena: Allocator + Clone,
 {
     type Item = (I, P);
-    type IntoIter = IntoIter<I, P>;
-    fn into_iter(self) -> IntoIter<I, P> {
+    type IntoIter = IntoIter<I, P, Arena>;
+    fn into_iter(self) -> IntoIter<I, P, Arena> {
         IntoIter {
             iter: self.map.into_iter(),
         }
     }
 }
 
-impl<'a, I, P, H> IntoIterator for &'a Store<I, P, H>
+impl<'a, I, P, Arena, H> IntoIterator for &'a Store<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher,
+    Arena: Allocator + Clone,
 {
     type Item = (&'a I, &'a P);
     type IntoIter = Iter<'a, I, P>;
@@ -465,7 +535,7 @@ where
 
 use std::cmp::PartialEq;
 
-impl<I, P1, H1, P2, H2> PartialEq<Store<I, P2, H2>> for Store<I, P1, H1>
+impl<I, P1, H1, P2, H2, Arena> PartialEq<Store<I, P2, Arena, H2>> for Store<I, P1, Arena, H1>
 where
     I: Hash + Eq,
     P1: Ord,
@@ -474,19 +544,20 @@ where
     P2: Ord,
     H1: BuildHasher,
     H2: BuildHasher,
+    Arena: Allocator + Clone,
 {
-    fn eq(&self, other: &Store<I, P2, H2>) -> bool {
+    fn eq(&self, other: &Store<I, P2, Arena, H2>) -> bool {
         self.map == other.map
     }
 }
 
-impl<I, P, H> From<Vec<(I, P)>> for Store<I, P, H>
+impl<I, P, H> From<std::vec::Vec<(I, P)>> for Store<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher + Default,
 {
-    fn from(vec: Vec<(I, P)>) -> Self {
+    fn from(vec: std::vec::Vec<(I, P)>) -> Self {
         let mut store = Self::with_capacity_and_hasher(vec.len(), <_>::default());
         let mut i = 0;
         for (item, priority) in vec {
@@ -502,7 +573,7 @@ where
     }
 }
 
-impl<I, P, H> FromIterator<(I, P)> for Store<I, P, H>
+impl<I, P, H> FromIterator<(I, P)> for Store<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
@@ -537,11 +608,12 @@ where
     }
 }
 
-impl<I, P, H> Extend<(I, P)> for Store<I, P, H>
+impl<I, P, Arena, H> Extend<(I, P)> for Store<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher,
+    Arena: Allocator + Clone,
 {
     fn extend<T: IntoIterator<Item = (I, P)>>(&mut self, iter: T) {
         for (item, priority) in iter {
@@ -560,10 +632,11 @@ where
 }
 
 use std::fmt;
-impl<I, P, H> fmt::Debug for Store<I, P, H>
+impl<I, P, Arena, H> fmt::Debug for Store<I, P, Arena, H>
 where
     I: fmt::Debug + Hash + Eq,
     P: fmt::Debug + Ord,
+    Arena: Allocator + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_map()
@@ -587,11 +660,12 @@ mod serde {
 
     use serde::ser::{Serialize, SerializeSeq, Serializer};
 
-    impl<I, P, H> Serialize for Store<I, P, H>
+    impl<I, P, Arena, H> Serialize for Store<I, P, Arena, H>
     where
         I: Hash + Eq + Serialize,
         P: Ord + Serialize,
         H: BuildHasher,
+        Arena: Allocator + Clone,
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -606,11 +680,12 @@ mod serde {
     }
 
     use serde::de::{Deserialize, Deserializer, SeqAccess, Visitor};
-    impl<'de, I, P, H> Deserialize<'de> for Store<I, P, H>
+    impl<'de, I, P, Arena, H> Deserialize<'de> for Store<I, P, Arena, H>
     where
         I: Hash + Eq + Deserialize<'de>,
         P: Ord + Deserialize<'de>,
         H: BuildHasher + Default,
+        Arena: Allocator + Clone,
     {
         fn deserialize<D>(deserializer: D) -> Result<Store<I, P, H>, D::Error>
         where
@@ -622,20 +697,22 @@ mod serde {
         }
     }
 
-    struct StoreVisitor<I, P, H = RandomState>
+    struct StoreVisitor<I, P, Arena = Global, H = RandomState>
     where
         I: Hash + Eq,
         P: Ord,
+        Arena: Allocator + Clone,
     {
-        marker: PhantomData<Store<I, P, H>>,
+        marker: PhantomData<Store<I, P, Arena, H>>,
     }
-    impl<'de, I, P, H> Visitor<'de> for StoreVisitor<I, P, H>
+    impl<'de, I, P, Arena, H> Visitor<'de> for StoreVisitor<I, P, Arena, H>
     where
         I: Hash + Eq + Deserialize<'de>,
         P: Ord + Deserialize<'de>,
         H: BuildHasher + Default,
+        Arena: Allocator + Clone,
     {
-        type Value = Store<I, P, H>;
+        type Value = Store<I, P, Arena, H>;
 
         fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
             write!(formatter, "A priority queue")

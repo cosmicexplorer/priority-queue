@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi
+ *  Copyright 2017, 2021, 2022 Gianmarco Garrisi
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -24,11 +24,11 @@
 
 pub mod iterators;
 
-#[cfg(not(has_std))]
-use std::vec::Vec;
+use indexmap::Vec;
 
 use crate::core_iterators::{IntoIter, Iter};
 use crate::store::Store;
+use crate::{Allocator, Global};
 use iterators::*;
 
 use std::borrow::Borrow;
@@ -71,34 +71,37 @@ use std::mem::replace;
 /// ```
 #[derive(Clone, Debug)]
 #[cfg(has_std)]
-pub struct PriorityQueue<I, P, H = RandomState>
+pub struct PriorityQueue<I, P, Arena = Global, H = RandomState>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub(crate) store: Store<I, P, H>,
+    pub(crate) store: Store<I, P, Arena, H>,
 }
 
 #[derive(Clone, Debug)]
 #[cfg(not(has_std))]
-pub struct PriorityQueue<I, P, H>
+pub struct PriorityQueue<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub(crate) store: Store<I, P, H>,
+    pub(crate) store: Store<I, P, Arena, H>,
 }
 
 // do not [derive(Eq)] to loosen up trait requirements for other types and impls
-impl<I, P, H> Eq for PriorityQueue<I, P, H>
+impl<I, P, Arena, H> Eq for PriorityQueue<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
     H: BuildHasher,
 {
 }
 
-impl<I, P, H> Default for PriorityQueue<I, P, H>
+impl<I, P, H> Default for PriorityQueue<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
@@ -126,7 +129,7 @@ where
     }
 }
 
-impl<I, P, H> PriorityQueue<I, P, H>
+impl<I, P, H> PriorityQueue<I, P, Global, H>
 where
     P: Ord,
     I: Hash + Eq,
@@ -143,7 +146,7 @@ where
     }
 }
 
-impl<I, P, H> PriorityQueue<I, P, H>
+impl<I, P, H> PriorityQueue<I, P, Global, H>
 where
     P: Ord,
     I: Hash + Eq,
@@ -164,6 +167,54 @@ where
             store: Store::with_capacity_and_hasher(capacity, hash_builder),
         }
     }
+}
+
+impl<I, P, Arena, H> PriorityQueue<I, P, Arena, H>
+where
+    P: Ord,
+    I: Hash + Eq,
+    Arena: Allocator + Clone,
+    H: BuildHasher + Default,
+{
+    /// Creates an empty `PriorityQueue` with the specified hasher
+    pub fn new_in(arena: Arena) -> Self {
+        Self::with_capacity_in(0, arena)
+    }
+
+    /// Creates an empty `PriorityQueue` with the specified capacity and hasher
+    ///
+    /// The internal collections will be able to hold at least `capacity`
+    /// elements without reallocating.
+    /// If `capacity` is 0, there will be no allocation.
+    pub fn with_capacity_in(capacity: usize, arena: Arena) -> Self {
+        Self {
+            store: Store::with_capacity_and_default_hasher_in(capacity, arena),
+        }
+    }
+}
+
+impl<I, P, Arena, H> PriorityQueue<I, P, Arena, H>
+where
+    P: Ord,
+    I: Hash + Eq,
+    Arena: Allocator + Clone,
+    H: BuildHasher,
+{
+    /// Creates an empty `PriorityQueue` with the specified hasher
+    pub fn with_hasher_in(hash_builder: H, arena: Arena) -> Self {
+        Self::with_capacity_and_hasher_in(0, hash_builder, arena)
+    }
+
+    /// Creates an empty `PriorityQueue` with the specified capacity and hasher
+    ///
+    /// The internal collections will be able to hold at least `capacity`
+    /// elements without reallocating.
+    /// If `capacity` is 0, there will be no allocation.
+    pub fn with_capacity_and_hasher_in(capacity: usize, hash_builder: H, arena: Arena) -> Self {
+        Self {
+            store: Store::with_capacity_and_hasher_in(capacity, hash_builder, arena),
+        }
+    }
 
     /// Returns an iterator in arbitrary order over the
     /// (item, priority) elements in the queue
@@ -172,10 +223,11 @@ where
     }
 }
 
-impl<I, P, H> PriorityQueue<I, P, H>
+impl<I, P, Arena, H> PriorityQueue<I, P, Arena, H>
 where
     P: Ord,
     I: Hash + Eq,
+    Arena: Allocator + Clone,
 {
     /// Returns an iterator in arbitrary order over the
     /// (item, priority) elements in the queue.
@@ -187,7 +239,7 @@ where
     /// will be rebuilt once the `IterMut` goes out of scope. It would be
     /// rebuilt even if no priority value would have been modified, but the
     /// procedure will not move anything, but just compare the priorities.
-    pub fn iter_mut(&mut self) -> IterMut<I, P, H> {
+    pub fn iter_mut(&mut self) -> IterMut<I, P, Arena, H> {
         IterMut::new(self)
     }
 
@@ -279,15 +331,16 @@ where
     /// Generates a new iterator from self that
     /// will extract the elements from the one with the highest priority
     /// to the lowest one.
-    pub fn into_sorted_iter(self) -> IntoSortedIter<I, P, H> {
+    pub fn into_sorted_iter(self) -> IntoSortedIter<I, P, Arena, H> {
         IntoSortedIter { pq: self }
     }
 }
 
-impl<I, P, H> PriorityQueue<I, P, H>
+impl<I, P, Arena, H> PriorityQueue<I, P, Arena, H>
 where
     P: Ord,
     I: Hash + Eq,
+    Arena: Allocator + Clone,
     H: BuildHasher,
 {
     // reserve_exact -> IndexMap does not implement reserve_exact
@@ -498,17 +551,11 @@ where
     }
 }
 
-impl<I, P, H> PriorityQueue<I, P, H>
+impl<I, P, Arena, H> PriorityQueue<I, P, Arena, H>
 where
     P: Ord,
     I: Hash + Eq,
-{
-}
-
-impl<I, P, H> PriorityQueue<I, P, H>
-where
-    P: Ord,
-    I: Hash + Eq,
+    Arena: Allocator + Clone,
 {
     /**************************************************************************/
     /*                            internal functions                          */
@@ -612,14 +659,14 @@ where
 
 //FIXME: fails when the vector contains repeated items
 // FIXED: repeated items ignored
-impl<I, P, H> From<Vec<(I, P)>> for PriorityQueue<I, P, H>
+impl<I, P, H> From<std::vec::Vec<(I, P)>> for PriorityQueue<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher + Default,
 {
-    fn from(vec: Vec<(I, P)>) -> Self {
-        let store = Store::from(vec);
+    fn from(vec: std::vec::Vec<(I, P)>) -> Self {
+        let store = Store::<I, P, Global, H>::from(vec);
         let mut pq = PriorityQueue { store };
         pq.heap_build();
         pq
@@ -628,13 +675,13 @@ where
 
 use crate::DoublePriorityQueue;
 
-impl<I, P, H> From<DoublePriorityQueue<I, P, H>> for PriorityQueue<I, P, H>
+impl<I, P, H> From<DoublePriorityQueue<I, P, Global, H>> for PriorityQueue<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
     H: BuildHasher,
 {
-    fn from(pq: DoublePriorityQueue<I, P, H>) -> Self {
+    fn from(pq: DoublePriorityQueue<I, P, Global, H>) -> Self {
         let store = pq.store;
         let mut this = Self { store };
         this.heap_build();
@@ -645,7 +692,7 @@ where
 //FIXME: fails when the iterator contains repeated items
 // FIXED: the item inside the pq is updated
 // so there are two functions with different behaviours.
-impl<I, P, H> FromIterator<(I, P)> for PriorityQueue<I, P, H>
+impl<I, P, H> FromIterator<(I, P)> for PriorityQueue<I, P, Global, H>
 where
     I: Hash + Eq,
     P: Ord,
@@ -662,23 +709,25 @@ where
     }
 }
 
-impl<I, P, H> IntoIterator for PriorityQueue<I, P, H>
+impl<I, P, Arena, H> IntoIterator for PriorityQueue<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
     H: BuildHasher,
 {
     type Item = (I, P);
-    type IntoIter = IntoIter<I, P>;
-    fn into_iter(self) -> IntoIter<I, P> {
+    type IntoIter = IntoIter<I, P, Arena>;
+    fn into_iter(self) -> IntoIter<I, P, Arena> {
         self.store.into_iter()
     }
 }
 
-impl<'a, I, P, H> IntoIterator for &'a PriorityQueue<I, P, H>
+impl<'a, I, P, Arena, H> IntoIterator for &'a PriorityQueue<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
     H: BuildHasher,
 {
     type Item = (&'a I, &'a P);
@@ -688,22 +737,24 @@ where
     }
 }
 
-impl<'a, I, P, H> IntoIterator for &'a mut PriorityQueue<I, P, H>
+impl<'a, I, P, Arena, H> IntoIterator for &'a mut PriorityQueue<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
     type Item = (&'a mut I, &'a mut P);
-    type IntoIter = IterMut<'a, I, P, H>;
-    fn into_iter(self) -> IterMut<'a, I, P, H> {
+    type IntoIter = IterMut<'a, I, P, Arena, H>;
+    fn into_iter(self) -> IterMut<'a, I, P, Arena, H> {
         IterMut::new(self)
     }
 }
 
-impl<I, P, H> Extend<(I, P)> for PriorityQueue<I, P, H>
+impl<I, P, Arena, H> Extend<(I, P)> for PriorityQueue<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
     H: BuildHasher,
 {
     fn extend<T: IntoIterator<Item = (I, P)>>(&mut self, iter: T) {
@@ -731,7 +782,8 @@ where
 
 use std::cmp::PartialEq;
 
-impl<I, P1, H1, P2, H2> PartialEq<PriorityQueue<I, P2, H2>> for PriorityQueue<I, P1, H1>
+impl<I, P1, H1, P2, H2, Arena> PartialEq<PriorityQueue<I, P2, Arena, H2>>
+    for PriorityQueue<I, P1, Arena, H1>
 where
     I: Hash + Eq,
     P1: Ord,
@@ -740,8 +792,9 @@ where
     P2: Ord,
     H1: BuildHasher,
     H2: BuildHasher,
+    Arena: Allocator + Clone,
 {
-    fn eq(&self, other: &PriorityQueue<I, P2, H2>) -> bool {
+    fn eq(&self, other: &PriorityQueue<I, P2, Arena, H2>) -> bool {
         self.store == other.store
     }
 }

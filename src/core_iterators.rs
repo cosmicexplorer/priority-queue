@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi
+ *  Copyright 2017, 2022 Gianmarco Garrisi
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -63,18 +63,20 @@ where
 /// `(item, priority)` that consumes the queue.
 ///
 /// It can be obtained calling the `into_iter` method from the `IntoIterator` trait.
-pub struct IntoIter<I, P>
+pub struct IntoIter<I, P, Arena>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: ::indexmap::Allocator,
 {
-    pub(crate) iter: ::indexmap::map::IntoIter<I, P>,
+    pub(crate) iter: ::indexmap::map::IntoIter<I, P, Arena>,
 }
 
-impl<I, P> Iterator for IntoIter<I, P>
+impl<I, P, Arena> Iterator for IntoIter<I, P, Arena>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: ::indexmap::Allocator,
 {
     type Item = (I, P);
     fn next(&mut self) -> Option<(I, P)> {

@@ -20,8 +20,8 @@ travis-ci = { repository = "garro95/priority-queue", branch = "master" }
 autocfg = "1"
 
 [dependencies]
-indexmap = "1"
-serde = { version = "1", optional = true }
+indexmap = { git = "https://github.com/cosmicexplorer/indexmap", rev = "231e4358ddb850a22d3c2e90e58328f9dbb8a092" }
+serde = {version = "1", optional = true}
 
 [dev-dependencies]
 serde_test = "1"

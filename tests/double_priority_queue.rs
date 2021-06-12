@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi and contributors
+ *  Copyright 2017, 2022 Gianmarco Garrisi and contributors
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -20,6 +20,8 @@
 
 #[cfg(test)]
 mod doublepq_tests {
+    use priority_queue::Global;
+
     pub use priority_queue::DoublePriorityQueue;
 
     #[test]
@@ -307,7 +309,7 @@ mod doublepq_tests {
     #[test]
     fn remove2() {
         use std::collections::hash_map::RandomState;
-        let mut queue = DoublePriorityQueue::<i32, i32, RandomState>::default();
+        let mut queue = DoublePriorityQueue::<i32, i32, Global, RandomState>::default();
 
         for i in 0..7 {
             queue.push(i, i);
@@ -321,7 +323,7 @@ mod doublepq_tests {
             last_priority = priority;
         }
 
-        let mut queue: DoublePriorityQueue<i32, i32, RandomState> =
+        let mut queue: DoublePriorityQueue<i32, i32, Global, RandomState> =
             [20, 7, 19, 5, 6, 15, 18, 1, 2, 3, 4, 13, 14, 16, 17]
                 .iter()
                 .map(|i| (*i, *i))

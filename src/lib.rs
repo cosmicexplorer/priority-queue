@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi and contributors
+ *  Copyright 2017-2022 Gianmarco Garrisi and contributors
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -65,6 +65,7 @@
 //! }
 //! ```
 #![cfg_attr(not(has_std), no_std)]
+#![feature(allocator_api)]
 
 #[cfg(not(has_std))]
 extern crate alloc;
@@ -80,6 +81,8 @@ pub(crate) mod std {
     }
     pub use ::alloc::vec;
 }
+
+pub use indexmap::{Allocator, Global, Vec};
 
 pub mod core_iterators;
 pub mod double_priority_queue;

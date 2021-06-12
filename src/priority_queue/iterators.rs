@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi
+ *  Copyright 2017, 2022 Gianmarco Garrisi
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -40,6 +40,7 @@ use std::hash::Hash;
 use std::iter::*;
 
 use crate::PriorityQueue;
+use crate::{Allocator, Global};
 
 /// A mutable iterator over the couples `(item, priority)` of the `PriorityQueue`
 /// in arbitrary order.
@@ -53,39 +54,43 @@ use crate::PriorityQueue;
 /// The item is mutable too, but it is a logical error to modify it in a way that
 /// changes the result of any of `hash` or `eq`.
 #[cfg(has_std)]
-pub struct IterMut<'a, I: 'a, P: 'a, H: 'a = RandomState>
+pub struct IterMut<'a, I: 'a, P: 'a, Arena: 'a = Global, H: 'a = RandomState>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pq: &'a mut PriorityQueue<I, P, H>,
+    pq: &'a mut PriorityQueue<I, P, Arena, H>,
     pos: usize,
 }
 
 #[cfg(not(has_std))]
-pub struct IterMut<'a, I: 'a, P: 'a, H: 'a>
+pub struct IterMut<'a, I: 'a, P: 'a, Arena: 'a, H: 'a>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pq: &'a mut PriorityQueue<I, P, H>,
+    pq: &'a mut PriorityQueue<I, P, Arena, H>,
     pos: usize,
 }
 
-impl<'a, I: 'a, P: 'a, H: 'a> IterMut<'a, I, P, H>
+impl<'a, I: 'a, P: 'a, Arena: 'a, H: 'a> IterMut<'a, I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub(crate) fn new(pq: &'a mut PriorityQueue<I, P, H>) -> Self {
+    pub(crate) fn new(pq: &'a mut PriorityQueue<I, P, Arena, H>) -> Self {
         IterMut { pq, pos: 0 }
     }
 }
 
-impl<'a, 'b: 'a, I: 'a, P: 'a, H: 'a> Iterator for IterMut<'a, I, P, H>
+impl<'a, 'b: 'a, I: 'a, P: 'a, Arena: 'a, H: 'a> Iterator for IterMut<'a, I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
     type Item = (&'a mut I, &'a mut P);
     fn next(&mut self) -> Option<Self::Item> {
@@ -101,10 +106,11 @@ where
     }
 }
 
-impl<'a, I: 'a, P: 'a, H: 'a> Drop for IterMut<'a, I, P, H>
+impl<'a, I: 'a, P: 'a, Arena: 'a, H: 'a> Drop for IterMut<'a, I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
     fn drop(&mut self) {
         self.pq.heap_build();
@@ -116,27 +122,30 @@ where
 ///
 /// It can be obtained calling the `into_sorted_iter` method.
 #[cfg(has_std)]
-pub struct IntoSortedIter<I, P, H = RandomState>
+pub struct IntoSortedIter<I, P, Arena = Global, H = RandomState>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub(crate) pq: PriorityQueue<I, P, H>,
+    pub(crate) pq: PriorityQueue<I, P, Arena, H>,
 }
 
 #[cfg(not(has_std))]
-pub struct IntoSortedIter<I, P, H>
+pub struct IntoSortedIter<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
-    pub(crate) pq: PriorityQueue<I, P, H>,
+    pub(crate) pq: PriorityQueue<I, P, Arena, H>,
 }
 
-impl<I, P, H> Iterator for IntoSortedIter<I, P, H>
+impl<I, P, Arena, H> Iterator for IntoSortedIter<I, P, Arena, H>
 where
     I: Hash + Eq,
     P: Ord,
+    Arena: Allocator + Clone,
 {
     type Item = (I, P);
     fn next(&mut self) -> Option<(I, P)> {

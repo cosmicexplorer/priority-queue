@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 Gianmarco Garrisi and contributors
+ *  Copyright 2017, 2022 Gianmarco Garrisi and contributors
  *
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -22,10 +22,11 @@
 mod pqueue_tests {
     pub use priority_queue::PriorityQueue;
 
+    use priority_queue::Global;
+
     #[test]
     fn init() {
         let pq: PriorityQueue<String, i32> = PriorityQueue::new();
-        println!("{:?}", pq);
     }
 
     #[test]
@@ -33,7 +34,6 @@ mod pqueue_tests {
         let mut pq = PriorityQueue::new();
         pq.push("a", 1);
         pq.push("b", 2);
-        println!("{:?}", pq);
         assert_eq!(pq.len(), 2);
     }
 
@@ -46,9 +46,7 @@ mod pqueue_tests {
         pq.push("f", 7);
         pq.push("g", 4);
         pq.push("h", 3);
-        println!("{:?}", pq);
         assert_eq!(pq.pop(), Some(("f", 7)));
-        println!("{:?}", pq);
         assert_eq!(pq.peek(), Some((&"g", &4)));
         assert_eq!(pq.pop(), Some(("g", 4)));
         assert_eq!(pq.len(), 3);
@@ -288,7 +286,7 @@ mod pqueue_tests {
     #[test]
     fn remove2() {
         use std::collections::hash_map::RandomState;
-        let mut queue = PriorityQueue::<i32, i32, RandomState>::default();
+        let mut queue = PriorityQueue::<i32, i32, Global, RandomState>::default();
 
         for i in 0..7 {
             queue.push(i, i);
@@ -303,7 +301,7 @@ mod pqueue_tests {
             last_priority = priority;
         }
 
-        let mut queue: PriorityQueue<i32, i32, RandomState> =
+        let mut queue: PriorityQueue<i32, i32, Global, RandomState> =
             [20, 7, 19, 5, 6, 15, 18, 1, 2, 3, 4, 13, 14, 16, 17]
                 .iter()
                 .map(|i| (*i, *i))
@@ -428,14 +426,14 @@ mod pqueue_tests {
     fn eq() {
         let mut a = PriorityQueue::new();
         let mut b = PriorityQueue::new();
-        assert_eq!(a, b);
+        assert!(a == b);
 
         a.push("a", 1);
         b.push("a", 1);
-        assert_eq!(a, b);
+        assert!(a == b);
 
         a.push("b", 2);
-        assert_ne!(a, b);
+        assert!(a != b);
 
         b.push("f", 7);
         b.push("g", 4);
@@ -445,8 +443,8 @@ mod pqueue_tests {
         a.push("g", 4);
         a.push("f", 7);
         a.push("h", 3);
-        assert_eq!(a, b);
-        assert_eq!(b, a);
+        assert!(a == b);
+        assert!(b == a);
     }
 
     #[test]
